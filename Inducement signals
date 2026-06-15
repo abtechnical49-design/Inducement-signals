@@ -24,10 +24,10 @@ import requests
 # ⚙️  CONFIGURATION — FILL THESE IN
 # ─────────────────────────────────────────
 
-TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
-# How to get: Message @BotFather on Telegram → /newbot → copy token
+TELEGRAM_BOT_TOKEN = "8959181336:AAH2XrxLUq6rfXzaI8BH2M-sB2YIwND_7xY"
+# How to get: Message @BotFather on Telegram → newbott → copy token
 
-TELEGRAM_CHAT_ID   = "YOUR_CHAT_ID_HERE"
+TELEGRAM_CHAT_ID   = "6161785377"
 # How to get: Message @userinfobot on Telegram → it gives your chat ID
 
 WEBHOOK_PORT = 5000
