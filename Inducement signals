@@ -1,0 +1,337 @@
+"""
+╔══════════════════════════════════════════════════════════╗
+║     INDUCEMENT CYCLES - TELEGRAM SIGNAL BOT              ║
+║     Receives TradingView Webhooks → Sends to Telegram    ║
+║     Strategy by: Vito Falcony                            ║
+╚══════════════════════════════════════════════════════════╝
+
+REQUIREMENTS:
+    pip install flask python-telegram-bot requests
+
+HOW IT WORKS:
+    TradingView Alert → Webhook → This Bot → Telegram Message
+"""
+
+import json
+import logging
+import asyncio
+from datetime import datetime
+from flask import Flask, request, jsonify
+import telegram
+import requests
+
+# ─────────────────────────────────────────
+# ⚙️  CONFIGURATION — FILL THESE IN
+# ─────────────────────────────────────────
+
+TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+# How to get: Message @BotFather on Telegram → /newbot → copy token
+
+TELEGRAM_CHAT_ID   = "YOUR_CHAT_ID_HERE"
+# How to get: Message @userinfobot on Telegram → it gives your chat ID
+
+WEBHOOK_PORT = 5000
+# Port your server listens on (use 443/80 if on cloud server)
+
+SECRET_KEY = "inducement_cycles_2024"
+# Add this to your TradingView webhook URL for security
+
+# ─────────────────────────────────────────
+# 🚀 FLASK APP SETUP
+# ─────────────────────────────────────────
+
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger(__name__)
+
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+
+# ─────────────────────────────────────────
+# 📊 SIGNAL HISTORY (In-Memory Log)
+# ─────────────────────────────────────────
+
+signal_log = []
+MAX_LOG = 100
+
+# ─────────────────────────────────────────
+# 🎨 MESSAGE FORMATTERS
+# ─────────────────────────────────────────
+
+def format_buy_signal(data: dict) -> str:
+    pair      = data.get("pair",      "N/A")
+    entry     = data.get("entry",     "N/A")
+    sl        = data.get("sl",        "N/A")
+    tp1       = data.get("tp1",       "N/A")
+    tp2       = data.get("tp2",       "N/A")
+    tp3       = data.get("tp3",       "N/A")
+    score     = data.get("score",     "N/A")
+    timeframe = data.get("timeframe", "N/A")
+    now       = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    # Strength label
+    try:
+        s = float(score)
+        strength = "🔥 STRONG"  if s >= 8 else "⚡ MODERATE" if s >= 6 else "⚠️ WEAK"
+    except:
+        strength = "⚡ SIGNAL"
+
+    return (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"✅  *BUY SIGNAL*  ✅\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Pair:*       `{pair}`\n"
+        f"⏱️ *Timeframe:* `{timeframe}`\n"
+        f"🏆 *Score:*      `{score}/10  {strength}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 *Entry:*   `{entry}`\n"
+        f"🛑 *Stop Loss:* `{sl}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"✅ *TP1 (50%):* `{tp1}`\n"
+        f"✅ *TP2 (30%):* `{tp2}`\n"
+        f"🥇 *TP3 (20%):* `{tp3}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📐 *R:R Targets:* 1:1.5 / 1:2.5 / 1:4\n"
+        f"⚠️ *Max Risk:* 1-2% per trade\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧠 *Strategy Check:*\n"
+        f"  ✅ HTF Bias: Bullish\n"
+        f"  ✅ Inducement Sweep Confirmed\n"
+        f"  ✅ Algo Candle Signal Found\n"
+        f"  ✅ Session: Active\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🕐 `{now}`\n"
+        f"📚 _Inducement Cycles Strategy_"
+    )
+
+
+def format_sell_signal(data: dict) -> str:
+    pair      = data.get("pair",      "N/A")
+    entry     = data.get("entry",     "N/A")
+    sl        = data.get("sl",        "N/A")
+    tp1       = data.get("tp1",       "N/A")
+    tp2       = data.get("tp2",       "N/A")
+    tp3       = data.get("tp3",       "N/A")
+    score     = data.get("score",     "N/A")
+    timeframe = data.get("timeframe", "N/A")
+    now       = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    try:
+        s = float(score)
+        strength = "🔥 STRONG" if s >= 8 else "⚡ MODERATE" if s >= 6 else "⚠️ WEAK"
+    except:
+        strength = "⚡ SIGNAL"
+
+    return (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔴  *SELL SIGNAL*  🔴\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Pair:*       `{pair}`\n"
+        f"⏱️ *Timeframe:* `{timeframe}`\n"
+        f"🏆 *Score:*      `{score}/10  {strength}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 *Entry:*   `{entry}`\n"
+        f"🛑 *Stop Loss:* `{sl}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"✅ *TP1 (50%):* `{tp1}`\n"
+        f"✅ *TP2 (30%):* `{tp2}`\n"
+        f"🥇 *TP3 (20%):* `{tp3}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📐 *R:R Targets:* 1:1.5 / 1:2.5 / 1:4\n"
+        f"⚠️ *Max Risk:* 1-2% per trade\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧠 *Strategy Check:*\n"
+        f"  ✅ HTF Bias: Bearish\n"
+        f"  ✅ Inducement Sweep Confirmed\n"
+        f"  ✅ Algo Candle Signal Found\n"
+        f"  ✅ Session: Active\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🕐 `{now}`\n"
+        f"📚 _Inducement Cycles Strategy_"
+    )
+
+
+def format_inducement_alert(data: dict) -> str:
+    pair      = data.get("pair",  "N/A")
+    price     = data.get("price", "N/A")
+    signal    = data.get("signal","N/A")
+    now       = datetime.utcnow().strftime("%H:%M UTC")
+    direction = "📈 BULLISH" if "BULL" in signal else "📉 BEARISH"
+
+    return (
+        f"⚡ *INDUCEMENT DETECTED* ⚡\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Pair:*       `{pair}`\n"
+        f"📍 *Price:*      `{price}`\n"
+        f"🎯 *Direction:* {direction}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"⏳ *Wait for Algo Candle confirmation*\n"
+        f"🕐 `{now}`"
+    )
+
+
+def format_cycle_alert(data: dict) -> str:
+    pair  = data.get("pair",  "N/A")
+    price = data.get("price", "N/A")
+    now   = datetime.utcnow().strftime("%H:%M UTC")
+
+    return (
+        f"⏰ *90-MIN CYCLE TURN* ⏰\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Pair:* `{pair}`\n"
+        f"📍 *Price:* `{price}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👀 *Watch for potential reversal*\n"
+        f"🕐 `{now}`"
+    )
+
+
+# ─────────────────────────────────────────
+# 📨 SEND TELEGRAM MESSAGE
+# ─────────────────────────────────────────
+
+async def send_telegram(message: str, parse_mode: str = "Markdown"):
+    try:
+        await bot.send_message(
+            chat_id    = TELEGRAM_CHAT_ID,
+            text       = message,
+            parse_mode = parse_mode
+        )
+        log.info(f"✅ Telegram message sent successfully")
+    except Exception as e:
+        log.error(f"❌ Telegram send error: {e}")
+
+
+def send_signal_sync(message: str):
+    """Sync wrapper for async telegram send"""
+    asyncio.run(send_telegram(message))
+
+
+# ─────────────────────────────────────────
+# 🌐 WEBHOOK ENDPOINT
+# ─────────────────────────────────────────
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    """
+    TradingView sends alert to: http://YOUR_SERVER_IP:5000/webhook?key=inducement_cycles_2024
+    """
+
+    # Security check
+    key = request.args.get("key", "")
+    if key != SECRET_KEY:
+        log.warning(f"❌ Unauthorized webhook attempt from {request.remote_addr}")
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # Parse JSON body
+    try:
+        raw = request.get_data(as_text=True)
+        log.info(f"📥 Received: {raw}")
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        log.error(f"❌ JSON parse error: {e}")
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    signal_type = data.get("signal", "")
+
+    # Log signal
+    signal_log.insert(0, {
+        "type": signal_type,
+        "pair": data.get("pair", "N/A"),
+        "time": datetime.utcnow().isoformat(),
+        "data": data,
+    })
+    if len(signal_log) > MAX_LOG:
+        signal_log.pop()
+
+    # Route to correct formatter
+    if signal_type == "BUY":
+        msg = format_buy_signal(data)
+        send_signal_sync(msg)
+
+    elif signal_type == "SELL":
+        msg = format_sell_signal(data)
+        send_signal_sync(msg)
+
+    elif "INDUCEMENT" in signal_type:
+        msg = format_inducement_alert(data)
+        send_signal_sync(msg)
+
+    elif signal_type == "CYCLE_TURN":
+        msg = format_cycle_alert(data)
+        send_signal_sync(msg)
+
+    else:
+        log.warning(f"⚠️ Unknown signal type: {signal_type}")
+        return jsonify({"status": "unknown signal type"}), 200
+
+    return jsonify({"status": "ok", "signal": signal_type}), 200
+
+
+# ─────────────────────────────────────────
+# 📋 STATUS & LOG ENDPOINTS
+# ─────────────────────────────────────────
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "status":       "🟢 Inducement Cycles Bot Running",
+        "signals_sent": len(signal_log),
+        "last_signal":  signal_log[0] if signal_log else None,
+        "time":         datetime.utcnow().isoformat(),
+    })
+
+
+@app.route("/log", methods=["GET"])
+def get_log():
+    return jsonify({
+        "total":   len(signal_log),
+        "signals": signal_log[:20]
+    })
+
+
+@app.route("/test", methods=["GET"])
+def test_signal():
+    """Test endpoint — sends a sample BUY signal to Telegram"""
+    sample = {
+        "signal":    "BUY",
+        "pair":      "XAUUSD",
+        "entry":     "2345.50",
+        "sl":        "2330.00",
+        "tp1":       "2360.00",
+        "tp2":       "2378.00",
+        "tp3":       "2400.00",
+        "score":     "8.5",
+        "timeframe": "15",
+    }
+    msg = format_buy_signal(sample)
+    send_signal_sync(msg)
+    return jsonify({"status": "Test signal sent to Telegram ✅"})
+
+
+# ─────────────────────────────────────────
+# 🚀 START BOT
+# ─────────────────────────────────────────
+
+if __name__ == "__main__":
+    log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    log.info("🎯  INDUCEMENT CYCLES TELEGRAM BOT")
+    log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    log.info(f"🌐 Webhook URL: http://YOUR_IP:{WEBHOOK_PORT}/webhook?key={SECRET_KEY}")
+    log.info(f"📊 Status Page: http://YOUR_IP:{WEBHOOK_PORT}/")
+    log.info(f"🧪 Test Signal: http://YOUR_IP:{WEBHOOK_PORT}/test")
+    log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+    # Send startup message to Telegram
+    startup_msg = (
+        "🚀 *Inducement Cycles Bot Started!*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "✅ Monitoring: XAUUSD, GBPUSD\n"
+        "✅ EURUSD, GBPJPY, XAGUSD\n"
+        "✅ Strategy: Inducement Cycles\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📡 Waiting for TradingView signals..."
+    )
+    send_signal_sync(startup_msg)
+
+    app.run(host="0.0.0.0", port=WEBHOOK_PORT, debug=False)
