@@ -13,6 +13,7 @@ HOW IT WORKS:
 """
 
 import json
+import os
 import logging
 import asyncio
 from datetime import datetime
@@ -24,13 +25,13 @@ import requests
 # ⚙️  CONFIGURATION — FILL THESE IN
 # ─────────────────────────────────────────
 
-TELEGRAM_BOT_TOKEN = "8959181336:AAH2XrxLUq6rfXzaI8BH2M-sB2YIwND_7xY"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # How to get: Message @BotFather on Telegram → newbott → copy token
 
-TELEGRAM_CHAT_ID   = "6161785377"
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 # How to get: Message @userinfobot on Telegram → it gives your chat ID
 
-WEBHOOK_PORT = 5000
+WEBHOOK_PORT = int(os.environ.get("PORT", 5000))
 # Port your server listens on (use 443/80 if on cloud server)
 
 SECRET_KEY = "inducement_cycles_2024"
